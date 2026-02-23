@@ -12,8 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { Plus, CalendarDays, Loader2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, CalendarDays, Loader2, List, Columns3, GripVertical } from "lucide-react";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 
 interface Activity {
   id: string;
@@ -63,6 +65,7 @@ function ItineraryContent() {
   const tripId = searchParams.get("tripId");
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [showAddDay, setShowAddDay] = useState(false);
   const [newDay, setNewDay] = useState({ date: "", title: "", notes: "" });
   const [showAddActivity, setShowAddActivity] = useState<string | null>(null);
@@ -160,6 +163,52 @@ function ItineraryContent() {
     }
   }
 
+  async function handleDragEnd(result: DropResult) {
+    if (!result.destination || !trip) return;
+
+    const { source, destination } = result;
+    const sourceDayId = source.droppableId;
+    const destDayId = destination.droppableId;
+
+    const newDays = trip.days.map((d) => ({
+      ...d,
+      activities: [...d.activities].sort((a, b) => a.order - b.order),
+    }));
+
+    const sourceDay = newDays.find((d) => d.id === sourceDayId);
+    const destDay = newDays.find((d) => d.id === destDayId);
+    if (!sourceDay || !destDay) return;
+
+    const [moved] = sourceDay.activities.splice(source.index, 1);
+    destDay.activities.splice(destination.index, 0, moved);
+
+    // Recalculate orders
+    const updates: { id: string; dayId: string; order: number }[] = [];
+    for (const day of newDays) {
+      day.activities.forEach((a, i) => {
+        updates.push({ id: a.id, dayId: day.id, order: i });
+        a.order = i;
+      });
+    }
+
+    setTrip({ ...trip, days: newDays });
+
+    try {
+      await fetch("/api/activities/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activities: updates }),
+      });
+    } catch {
+      console.error("Failed to save reorder");
+      fetchTrip();
+    }
+  }
+
+  const sortedDays = trip?.days
+    .slice()
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) ?? [];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -184,7 +233,7 @@ function ItineraryContent() {
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-8 mx-auto space-y-6 max-w-[1400px]">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -197,136 +246,252 @@ function ItineraryContent() {
             </p>
           )}
         </div>
-        <Button onClick={() => setShowAddDay(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Dag Toevoegen
-        </Button>
+        <div className="flex items-center gap-3">
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "list" | "kanban")}>
+            <TabsList>
+              <TabsTrigger value="list" className="gap-1.5">
+                <List className="w-3.5 h-3.5" />
+                Lijst
+              </TabsTrigger>
+              <TabsTrigger value="kanban" className="gap-1.5">
+                <Columns3 className="w-3.5 h-3.5" />
+                Kanban
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button onClick={() => setShowAddDay(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Dag Toevoegen
+          </Button>
+        </div>
       </div>
 
-      {trip?.days
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-        .map((day, index) => (
-          <Card key={day.id}>
-            <CardContent className="pt-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
-                    {index + 1}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        {viewMode === "list" ? (
+          <div className="space-y-6 max-w-4xl">
+            {sortedDays.map((day, index) => (
+              <Card key={day.id}>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-semibold">{day.title}</h2>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(day.date).toLocaleDateString("nl-NL", {
+                            weekday: "long",
+                            day: "numeric",
+                            month: "long",
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setShowAddActivity(day.id)}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Activiteit
+                    </Button>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-semibold">{day.title}</h2>
-                    <p className="text-sm text-muted-foreground">
+
+                  {day.notes && (
+                    <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
+                      {day.notes}
+                    </p>
+                  )}
+
+                  <Droppable droppableId={day.id}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`space-y-2 min-h-[40px] rounded-lg transition-colors ${snapshot.isDraggingOver ? "bg-accent/50 p-2" : ""}`}
+                      >
+                        {day.activities
+                          .slice()
+                          .sort((a, b) => a.order - b.order)
+                          .map((activity, actIndex) => (
+                            <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  className={snapshot.isDragging ? "opacity-90" : ""}
+                                >
+                                  <div className="flex items-start gap-1">
+                                    <div
+                                      {...provided.dragHandleProps}
+                                      className="mt-3 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing"
+                                    >
+                                      <GripVertical className="w-4 h-4" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <ActivityCard
+                                        activity={activity}
+                                        onDelete={() => deleteActivity(activity.id)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+
+                  {showAddActivity === day.id && (
+                    <>
+                      <Separator />
+                      <form onSubmit={(e) => addActivity(e, day.id)} className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            placeholder="Activiteit naam"
+                            value={newActivity.name}
+                            onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
+                            required
+                          />
+                          <PlacesAutocomplete
+                            value={newActivity.location}
+                            onChange={(value) => setNewActivity({ ...newActivity, location: value })}
+                            onPlaceSelect={(place) => setNewActivity({
+                              ...newActivity,
+                              location: place.name,
+                              address: place.address,
+                              latitude: place.latitude,
+                              longitude: place.longitude,
+                              placeId: place.placeId,
+                            })}
+                            placeholder="Zoek locatie..."
+                          />
+                        </div>
+                        <Input
+                          placeholder="Beschrijving"
+                          value={newActivity.description}
+                          onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
+                        />
+                        <div className="grid grid-cols-4 gap-3">
+                          <Input
+                            type="time"
+                            value={newActivity.startTime}
+                            onChange={(e) => setNewActivity({ ...newActivity, startTime: e.target.value })}
+                          />
+                          <Input
+                            type="time"
+                            value={newActivity.endTime}
+                            onChange={(e) => setNewActivity({ ...newActivity, endTime: e.target.value })}
+                          />
+                          <Select
+                            value={newActivity.category}
+                            onValueChange={(value) => setNewActivity({ ...newActivity, category: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
+                              <SelectItem value="food">Eten & Drinken</SelectItem>
+                              <SelectItem value="transport">Transport</SelectItem>
+                              <SelectItem value="shopping">Winkelen</SelectItem>
+                              <SelectItem value="accommodation">Overnachting</SelectItem>
+                              <SelectItem value="culture">Cultuur</SelectItem>
+                              <SelectItem value="nature">Natuur</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            placeholder="Kosten"
+                            value={newActivity.cost || ""}
+                            onChange={(e) => setNewActivity({ ...newActivity, cost: Number(e.target.value) })}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="submit" size="sm">Toevoegen</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setShowAddActivity(null)}>
+                            Annuleren
+                          </Button>
+                        </div>
+                      </form>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          /* Kanban view */
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {sortedDays.map((day, index) => (
+              <div key={day.id} className="w-80 shrink-0">
+                <div className="bg-muted/50 rounded-xl border">
+                  <div className="p-4 border-b">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs">
+                        {index + 1}
+                      </span>
+                      <h3 className="font-semibold text-sm truncate">{day.title}</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
                       {new Date(day.date).toLocaleDateString("nl-NL", {
-                        weekday: "long",
+                        weekday: "short",
                         day: "numeric",
-                        month: "long",
+                        month: "short",
                       })}
                     </p>
                   </div>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowAddActivity(day.id)}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  Activiteit
-                </Button>
-              </div>
 
-              {day.notes && (
-                <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
-                  {day.notes}
-                </p>
-              )}
-
-              <div className="space-y-2">
-                {day.activities
-                  .sort((a, b) => a.order - b.order)
-                  .map((activity) => (
-                    <ActivityCard
-                      key={activity.id}
-                      activity={activity}
-                      onDelete={() => deleteActivity(activity.id)}
-                    />
-                  ))}
-              </div>
-
-              {showAddActivity === day.id && (
-                <>
-                  <Separator />
-                  <form onSubmit={(e) => addActivity(e, day.id)} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        placeholder="Activiteit naam"
-                        value={newActivity.name}
-                        onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
-                        required
-                      />
-                      <PlacesAutocomplete
-                        value={newActivity.location}
-                        onChange={(value) => setNewActivity({ ...newActivity, location: value })}
-                        onPlaceSelect={(place) => setNewActivity({
-                          ...newActivity,
-                          location: place.name,
-                          address: place.address,
-                          latitude: place.latitude,
-                          longitude: place.longitude,
-                          placeId: place.placeId,
-                        })}
-                        placeholder="Zoek locatie..."
-                      />
-                    </div>
-                    <Input
-                      placeholder="Beschrijving"
-                      value={newActivity.description}
-                      onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
-                    />
-                    <div className="grid grid-cols-4 gap-3">
-                      <Input
-                        type="time"
-                        value={newActivity.startTime}
-                        onChange={(e) => setNewActivity({ ...newActivity, startTime: e.target.value })}
-                      />
-                      <Input
-                        type="time"
-                        value={newActivity.endTime}
-                        onChange={(e) => setNewActivity({ ...newActivity, endTime: e.target.value })}
-                      />
-                      <Select
-                        value={newActivity.category}
-                        onValueChange={(value) => setNewActivity({ ...newActivity, category: value })}
+                  <Droppable droppableId={day.id}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={`p-2 space-y-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-accent/30" : ""}`}
                       >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
-                          <SelectItem value="food">Eten & Drinken</SelectItem>
-                          <SelectItem value="transport">Transport</SelectItem>
-                          <SelectItem value="shopping">Winkelen</SelectItem>
-                          <SelectItem value="accommodation">Overnachting</SelectItem>
-                          <SelectItem value="culture">Cultuur</SelectItem>
-                          <SelectItem value="nature">Natuur</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        type="number"
-                        placeholder="Kosten"
-                        value={newActivity.cost || ""}
-                        onChange={(e) => setNewActivity({ ...newActivity, cost: Number(e.target.value) })}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" size="sm">Toevoegen</Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowAddActivity(null)}>
-                        Annuleren
-                      </Button>
-                    </div>
-                  </form>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                        {day.activities
+                          .slice()
+                          .sort((a, b) => a.order - b.order)
+                          .map((activity, actIndex) => (
+                            <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={snapshot.isDragging ? "opacity-90" : ""}
+                                >
+                                  <ActivityCard
+                                    activity={activity}
+                                    onDelete={() => deleteActivity(activity.id)}
+                                  />
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
 
-      {trip?.days.length === 0 && (
+                  <div className="p-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => setShowAddActivity(day.id)}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Activiteit
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DragDropContext>
+
+      {sortedDays.length === 0 && (
         <Card className="text-center py-12">
           <CardContent>
             <CalendarDays className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -335,6 +500,109 @@ function ItineraryContent() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Add Activity Dialog (for kanban view) */}
+      {showAddActivity && viewMode === "kanban" && (
+        <Dialog open={!!showAddActivity} onOpenChange={() => setShowAddActivity(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Activiteit Toevoegen</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => addActivity(e, showAddActivity)} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Naam</Label>
+                  <Input
+                    placeholder="Activiteit naam"
+                    value={newActivity.name}
+                    onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Locatie</Label>
+                  <PlacesAutocomplete
+                    value={newActivity.location}
+                    onChange={(value) => setNewActivity({ ...newActivity, location: value })}
+                    onPlaceSelect={(place) => setNewActivity({
+                      ...newActivity,
+                      location: place.name,
+                      address: place.address,
+                      latitude: place.latitude,
+                      longitude: place.longitude,
+                      placeId: place.placeId,
+                    })}
+                    placeholder="Zoek locatie..."
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Beschrijving</Label>
+                <Input
+                  placeholder="Beschrijving"
+                  value={newActivity.description}
+                  onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Starttijd</Label>
+                  <Input
+                    type="time"
+                    value={newActivity.startTime}
+                    onChange={(e) => setNewActivity({ ...newActivity, startTime: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Eindtijd</Label>
+                  <Input
+                    type="time"
+                    value={newActivity.endTime}
+                    onChange={(e) => setNewActivity({ ...newActivity, endTime: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Categorie</Label>
+                  <Select
+                    value={newActivity.category}
+                    onValueChange={(value) => setNewActivity({ ...newActivity, category: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
+                      <SelectItem value="food">Eten & Drinken</SelectItem>
+                      <SelectItem value="transport">Transport</SelectItem>
+                      <SelectItem value="shopping">Winkelen</SelectItem>
+                      <SelectItem value="accommodation">Overnachting</SelectItem>
+                      <SelectItem value="culture">Cultuur</SelectItem>
+                      <SelectItem value="nature">Natuur</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Kosten</Label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={newActivity.cost || ""}
+                    onChange={(e) => setNewActivity({ ...newActivity, cost: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" className="flex-1">Toevoegen</Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowAddActivity(null)}>
+                  Annuleren
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
 
       <Dialog open={showAddDay} onOpenChange={setShowAddDay}>
