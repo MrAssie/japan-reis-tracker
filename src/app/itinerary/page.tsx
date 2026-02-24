@@ -13,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, CalendarDays, Loader2, List, Columns3, GripVertical } from "lucide-react";
+import { Plus, CalendarDays, Loader2, List, Columns3, GripVertical, ChevronDown, ChevronUp, Pencil, Trash2, Check, Wallet } from "lucide-react";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
+import BudgetBar from "@/components/BudgetBar";
+import { Badge } from "@/components/ui/badge";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 
 interface Activity {
@@ -43,7 +45,17 @@ interface Trip {
   name: string;
   startDate: string;
   endDate: string;
+  totalBudget: number;
   days: Day[];
+}
+
+interface BudgetItem {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  currency: string;
+  paid: boolean;
 }
 
 export default function ItineraryPage() {
@@ -82,6 +94,13 @@ function ItineraryContent() {
     category: "sightseeing",
     cost: 0,
   });
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([]);
+  const [budgetExpanded, setBudgetExpanded] = useState(false);
+  const [showEditBudget, setShowEditBudget] = useState(false);
+  const [editBudgetTotal, setEditBudgetTotal] = useState(0);
+  const [showAddBudgetItem, setShowAddBudgetItem] = useState(false);
+  const [newBudgetItem, setNewBudgetItem] = useState({ name: "", category: "transport", amount: 0 });
+  const [editingBudgetItem, setEditingBudgetItem] = useState<BudgetItem | null>(null);
 
   const fetchTrip = useCallback(async () => {
     if (!tripId) {
@@ -101,9 +120,23 @@ function ItineraryContent() {
     }
   }, [tripId]);
 
+  const fetchBudget = useCallback(async () => {
+    if (!tripId) return;
+    try {
+      const res = await fetch(`/api/budget?tripId=${tripId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBudgetItems(data.items);
+      }
+    } catch {
+      console.error("Failed to fetch budget");
+    }
+  }, [tripId]);
+
   useEffect(() => {
     fetchTrip();
-  }, [fetchTrip]);
+    fetchBudget();
+  }, [fetchTrip, fetchBudget]);
 
   async function addDay(e: React.FormEvent) {
     e.preventDefault();
@@ -205,6 +238,83 @@ function ItineraryContent() {
     }
   }
 
+  async function updateTotalBudget(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tripId) return;
+    try {
+      const res = await fetch(`/api/trips/${tripId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totalBudget: editBudgetTotal }),
+      });
+      if (res.ok) {
+        setShowEditBudget(false);
+        fetchTrip();
+      }
+    } catch {
+      console.error("Failed to update budget");
+    }
+  }
+
+  async function addBudgetItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tripId) return;
+    try {
+      const res = await fetch("/api/budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newBudgetItem, tripId, paid: false }),
+      });
+      if (res.ok) {
+        setShowAddBudgetItem(false);
+        setNewBudgetItem({ name: "", category: "transport", amount: 0 });
+        fetchBudget();
+      }
+    } catch {
+      console.error("Failed to add budget item");
+    }
+  }
+
+  async function updateBudgetItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingBudgetItem) return;
+    try {
+      const res = await fetch(`/api/budget/${editingBudgetItem.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingBudgetItem),
+      });
+      if (res.ok) {
+        setEditingBudgetItem(null);
+        fetchBudget();
+      }
+    } catch {
+      console.error("Failed to update budget item");
+    }
+  }
+
+  async function deleteBudgetItem(id: string) {
+    try {
+      const res = await fetch(`/api/budget/${id}`, { method: "DELETE" });
+      if (res.ok) fetchBudget();
+    } catch {
+      console.error("Failed to delete budget item");
+    }
+  }
+
+  async function toggleBudgetItemPaid(item: BudgetItem) {
+    try {
+      const res = await fetch(`/api/budget/${item.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...item, paid: !item.paid }),
+      });
+      if (res.ok) fetchBudget();
+    } catch {
+      console.error("Failed to toggle paid status");
+    }
+  }
+
   const sortedDays = trip?.days
     .slice()
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) ?? [];
@@ -265,6 +375,101 @@ function ItineraryContent() {
           </Button>
         </div>
       </div>
+
+      {/* Budget Section */}
+      {trip && (
+        <Card className="max-w-4xl">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setBudgetExpanded(!budgetExpanded)}
+                className="flex items-center gap-2 text-left"
+              >
+                <Wallet className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-lg font-semibold">Budget</h2>
+                {budgetExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditBudgetTotal(trip.totalBudget);
+                  setShowEditBudget(true);
+                }}
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1" />
+                Budget
+              </Button>
+            </div>
+
+            <div className="mt-3">
+              <BudgetBar
+                spent={budgetItems.filter(i => i.paid).reduce((s, i) => s + i.amount, 0)}
+                total={trip.totalBudget}
+              />
+            </div>
+
+            {budgetExpanded && (
+              <div className="mt-4 space-y-2">
+                {budgetItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/50 group"
+                  >
+                    <button
+                      onClick={() => toggleBudgetItemPaid(item)}
+                      className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
+                        item.paid
+                          ? "bg-primary border-primary text-primary-foreground"
+                          : "border-input"
+                      }`}
+                    >
+                      {item.paid && <Check className="w-3 h-3" />}
+                    </button>
+                    <span className={`flex-1 text-sm ${item.paid ? "line-through text-muted-foreground" : ""}`}>
+                      {item.name}
+                    </span>
+                    <Badge variant="secondary" className="text-xs">
+                      {item.category}
+                    </Badge>
+                    <span className="text-sm font-medium w-20 text-right">
+                      {item.amount.toLocaleString("nl-NL", { style: "currency", currency: item.currency || "EUR" })}
+                    </span>
+                    <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                      <button
+                        onClick={() => setEditingBudgetItem({ ...item })}
+                        className="p-1 rounded hover:bg-accent"
+                      >
+                        <Pencil className="w-3 h-3 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={() => deleteBudgetItem(item.id)}
+                        className="p-1 rounded hover:bg-accent"
+                      >
+                        <Trash2 className="w-3 h-3 text-destructive" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2"
+                  onClick={() => setShowAddBudgetItem(true)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Item Toevoegen
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <DragDropContext onDragEnd={handleDragEnd}>
         {viewMode === "list" ? (
@@ -645,6 +850,138 @@ function ItineraryContent() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditBudget} onOpenChange={setShowEditBudget}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Budget Aanpassen</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={updateTotalBudget} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Totaal Budget</Label>
+              <Input
+                type="number"
+                value={editBudgetTotal || ""}
+                onChange={(e) => setEditBudgetTotal(Number(e.target.value))}
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" className="flex-1">Opslaan</Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowEditBudget(false)}>
+                Annuleren
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddBudgetItem} onOpenChange={setShowAddBudgetItem}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Budget Item Toevoegen</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={addBudgetItem} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Naam</Label>
+              <Input
+                placeholder="Bijv. Vliegtickets"
+                value={newBudgetItem.name}
+                onChange={(e) => setNewBudgetItem({ ...newBudgetItem, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Categorie</Label>
+                <Select
+                  value={newBudgetItem.category}
+                  onValueChange={(v) => setNewBudgetItem({ ...newBudgetItem, category: v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="transport">Transport</SelectItem>
+                    <SelectItem value="accommodation">Overnachting</SelectItem>
+                    <SelectItem value="food">Eten & Drinken</SelectItem>
+                    <SelectItem value="activities">Activiteiten</SelectItem>
+                    <SelectItem value="shopping">Winkelen</SelectItem>
+                    <SelectItem value="other">Overig</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Bedrag</Label>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  value={newBudgetItem.amount || ""}
+                  onChange={(e) => setNewBudgetItem({ ...newBudgetItem, amount: Number(e.target.value) })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" className="flex-1">Toevoegen</Button>
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowAddBudgetItem(false)}>
+                Annuleren
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingBudgetItem} onOpenChange={() => setEditingBudgetItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Budget Item Bewerken</DialogTitle>
+          </DialogHeader>
+          {editingBudgetItem && (
+            <form onSubmit={updateBudgetItem} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Naam</Label>
+                <Input
+                  value={editingBudgetItem.name}
+                  onChange={(e) => setEditingBudgetItem({ ...editingBudgetItem, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Categorie</Label>
+                  <Select
+                    value={editingBudgetItem.category}
+                    onValueChange={(v) => setEditingBudgetItem({ ...editingBudgetItem, category: v })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="transport">Transport</SelectItem>
+                      <SelectItem value="accommodation">Overnachting</SelectItem>
+                      <SelectItem value="food">Eten & Drinken</SelectItem>
+                      <SelectItem value="activities">Activiteiten</SelectItem>
+                      <SelectItem value="shopping">Winkelen</SelectItem>
+                      <SelectItem value="other">Overig</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Bedrag</Label>
+                  <Input
+                    type="number"
+                    value={editingBudgetItem.amount || ""}
+                    onChange={(e) => setEditingBudgetItem({ ...editingBudgetItem, amount: Number(e.target.value) })}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" className="flex-1">Opslaan</Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setEditingBudgetItem(null)}>
+                  Annuleren
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>
