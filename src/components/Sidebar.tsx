@@ -2,15 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, Map, MapPin } from "lucide-react";
+import { LayoutDashboard, CalendarDays, Map } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/itinerary", label: "Itinerary", icon: CalendarDays },
-  { href: "/map", label: "Kaart", icon: Map },
-  { href: "/places", label: "Plekken", icon: MapPin },
 ];
 
 export default function Sidebar() {
