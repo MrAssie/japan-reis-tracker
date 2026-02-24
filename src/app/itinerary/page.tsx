@@ -611,6 +611,7 @@ function ItineraryContent() {
                                   placeId: place.placeId,
                                 })}
                                 placeholder="Zoek locatie..."
+                                selectedAddress={newActivity.address}
                               />
                             </div>
                             <Input
@@ -752,13 +753,13 @@ function ItineraryContent() {
         </div>
 
         {/* Right side: Map */}
-        {trip && mapMarkers.length > 0 && (
+        {trip && (
           <div className="w-[400px] shrink-0">
             <div className="h-[calc(100vh-12rem)] rounded-xl overflow-hidden border sticky top-8">
               <MapView
                 markers={mapMarkers}
                 showRoute={true}
-                zoom={6}
+                zoom={mapMarkers.length > 0 ? 6 : 4}
               />
             </div>
           </div>
@@ -797,6 +798,7 @@ function ItineraryContent() {
                       placeId: place.placeId,
                     })}
                     placeholder="Zoek locatie..."
+                    selectedAddress={newActivity.address}
                   />
                 </div>
               </div>
@@ -1073,6 +1075,7 @@ function ItineraryContent() {
                       placeId: place.placeId,
                     })}
                     placeholder="Zoek locatie..."
+                    selectedAddress={editingActivity.address || ""}
                   />
                 </div>
               </div>
