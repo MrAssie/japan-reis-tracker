@@ -24,6 +24,10 @@ interface Activity {
   name: string;
   description: string | null;
   location: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  placeId: string | null;
   startTime: string | null;
   endTime: string | null;
   category: string;
@@ -101,6 +105,7 @@ function ItineraryContent() {
   const [showAddBudgetItem, setShowAddBudgetItem] = useState(false);
   const [newBudgetItem, setNewBudgetItem] = useState({ name: "", category: "transport", amount: 0 });
   const [editingBudgetItem, setEditingBudgetItem] = useState<BudgetItem | null>(null);
+  const [editingActivity, setEditingActivity] = useState<(Activity & { dayId: string }) | null>(null);
 
   const fetchTrip = useCallback(async () => {
     if (!tripId) {
@@ -312,6 +317,24 @@ function ItineraryContent() {
       if (res.ok) fetchBudget();
     } catch {
       console.error("Failed to toggle paid status");
+    }
+  }
+
+  async function updateActivity(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingActivity) return;
+    try {
+      const res = await fetch(`/api/activities/${editingActivity.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingActivity),
+      });
+      if (res.ok) {
+        setEditingActivity(null);
+        fetchTrip();
+      }
+    } catch {
+      console.error("Failed to update activity");
     }
   }
 
@@ -534,6 +557,7 @@ function ItineraryContent() {
                                       <ActivityCard
                                         activity={activity}
                                         onDelete={() => deleteActivity(activity.id)}
+                                        onEdit={() => setEditingActivity({ ...activity, dayId: day.id })}
                                       />
                                     </div>
                                   </div>
@@ -668,6 +692,7 @@ function ItineraryContent() {
                                   <ActivityCard
                                     activity={activity}
                                     onDelete={() => deleteActivity(activity.id)}
+                                    onEdit={() => setEditingActivity({ ...activity, dayId: day.id })}
                                   />
                                 </div>
                               )}
@@ -977,6 +1002,114 @@ function ItineraryContent() {
               <div className="flex gap-3 pt-2">
                 <Button type="submit" className="flex-1">Opslaan</Button>
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setEditingBudgetItem(null)}>
+                  Annuleren
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingActivity} onOpenChange={() => setEditingActivity(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Activiteit Bewerken</DialogTitle>
+          </DialogHeader>
+          {editingActivity && (
+            <form onSubmit={updateActivity} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Naam</Label>
+                  <Input
+                    value={editingActivity.name}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Locatie</Label>
+                  <PlacesAutocomplete
+                    value={editingActivity.location || ""}
+                    onChange={(value) => setEditingActivity({ ...editingActivity, location: value })}
+                    onPlaceSelect={(place) => setEditingActivity({
+                      ...editingActivity,
+                      location: place.name,
+                      address: place.address,
+                      latitude: place.latitude,
+                      longitude: place.longitude,
+                      placeId: place.placeId,
+                    })}
+                    placeholder="Zoek locatie..."
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Beschrijving</Label>
+                <Input
+                  value={editingActivity.description || ""}
+                  onChange={(e) => setEditingActivity({ ...editingActivity, description: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Starttijd</Label>
+                  <Input
+                    type="time"
+                    value={editingActivity.startTime || ""}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, startTime: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Eindtijd</Label>
+                  <Input
+                    type="time"
+                    value={editingActivity.endTime || ""}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, endTime: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Categorie</Label>
+                  <Select
+                    value={editingActivity.category}
+                    onValueChange={(value) => setEditingActivity({ ...editingActivity, category: value })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
+                      <SelectItem value="food">Eten & Drinken</SelectItem>
+                      <SelectItem value="transport">Transport</SelectItem>
+                      <SelectItem value="shopping">Winkelen</SelectItem>
+                      <SelectItem value="accommodation">Overnachting</SelectItem>
+                      <SelectItem value="culture">Cultuur</SelectItem>
+                      <SelectItem value="nature">Natuur</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Kosten</Label>
+                  <Input
+                    type="number"
+                    value={editingActivity.cost || ""}
+                    onChange={(e) => setEditingActivity({ ...editingActivity, cost: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" className="flex-1">Opslaan</Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => {
+                    deleteActivity(editingActivity.id);
+                    setEditingActivity(null);
+                  }}
+                >
+                  Verwijderen
+                </Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setEditingActivity(null)}>
                   Annuleren
                 </Button>
               </div>

@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Clock, MapPin, X } from "lucide-react";
+import { Clock, MapPin, Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Activity {
@@ -37,9 +37,10 @@ const categoryLabels: Record<string, string> = {
 interface ActivityCardProps {
   activity: Activity;
   onDelete?: () => void;
+  onEdit?: () => void;
 }
 
-export default function ActivityCard({ activity, onDelete }: ActivityCardProps) {
+export default function ActivityCard({ activity, onDelete, onEdit }: ActivityCardProps) {
   const config = categoryConfig[activity.category] || categoryConfig.sightseeing;
 
   return (
@@ -59,15 +60,26 @@ export default function ActivityCard({ activity, onDelete }: ActivityCardProps) 
               </p>
             )}
           </div>
-          {onDelete && (
-            <button
-              onClick={onDelete}
-              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-0.5 rounded shrink-0"
-              title="Verwijderen"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <div className="flex gap-0.5 shrink-0">
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all p-0.5 rounded"
+                title="Bewerken"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={onDelete}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-0.5 rounded"
+                title="Verwijderen"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2.5 mt-1.5 text-xs text-muted-foreground flex-wrap">
           {activity.startTime && (
