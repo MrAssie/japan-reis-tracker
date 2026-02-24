@@ -754,8 +754,8 @@ function ItineraryContent() {
 
         {/* Right side: Map */}
         {trip && (
-          <div className="w-[400px] shrink-0">
-            <div className="h-[calc(100vh-12rem)] rounded-xl overflow-hidden border sticky top-8">
+          <div className="w-[550px] shrink-0">
+            <div className="h-[calc(100vh-8rem)] rounded-xl overflow-hidden border sticky top-8">
               <MapView
                 markers={mapMarkers}
                 showRoute={true}
