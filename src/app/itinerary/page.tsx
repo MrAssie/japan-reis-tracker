@@ -107,7 +107,8 @@ function ItineraryContent() {
   const [newBudgetItem, setNewBudgetItem] = useState({ name: "", category: "transport", amount: 0 });
   const [editingBudgetItem, setEditingBudgetItem] = useState<BudgetItem | null>(null);
   const [editingActivity, setEditingActivity] = useState<(Activity & { dayId: string }) | null>(null);
-  const [editingDay, setEditingDay] = useState<{ id: string; date: string; title: string; notes: string } | null>(null);
+  const [editingDay, setEditingDay] = useState<{ id: string; date: string; originalDate: string; title: string; notes: string } | null>(null);
+  const [shiftSubsequentDays, setShiftSubsequentDays] = useState(false);
 
   const fetchTrip = useCallback(async () => {
     if (!tripId) {
@@ -349,8 +350,25 @@ function ItineraryContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingDay),
       });
+      if (res.ok && shiftSubsequentDays && editingDay.date !== editingDay.originalDate) {
+        const diffMs = new Date(editingDay.date).getTime() - new Date(editingDay.originalDate).getTime();
+        const subsequentDays = sortedDays.filter(
+          (d) => d.id !== editingDay.id && new Date(d.date).getTime() > new Date(editingDay.originalDate).getTime()
+        );
+        await Promise.all(
+          subsequentDays.map((d) => {
+            const newDate = new Date(new Date(d.date).getTime() + diffMs);
+            return fetch(`/api/days/${d.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ date: newDate.toISOString().split("T")[0] }),
+            });
+          })
+        );
+      }
       if (res.ok) {
         setEditingDay(null);
+        setShiftSubsequentDays(false);
         fetchTrip();
       }
     } catch {
@@ -569,12 +587,13 @@ function ItineraryContent() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setEditingDay({
+                            onClick={() => { setShiftSubsequentDays(false); setEditingDay({
                               id: day.id,
                               date: new Date(day.date).toISOString().split("T")[0],
+                              originalDate: new Date(day.date).toISOString().split("T")[0],
                               title: day.title,
                               notes: day.notes || "",
-                            })}
+                            }); }}
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
@@ -727,12 +746,13 @@ function ItineraryContent() {
                             <h3 className="font-semibold text-sm truncate">{day.title}</h3>
                           </div>
                           <button
-                            onClick={() => setEditingDay({
+                            onClick={() => { setShiftSubsequentDays(false); setEditingDay({
                               id: day.id,
                               date: new Date(day.date).toISOString().split("T")[0],
+                              originalDate: new Date(day.date).toISOString().split("T")[0],
                               title: day.title,
                               notes: day.notes || "",
-                            })}
+                            }); }}
                             className="text-muted-foreground hover:text-foreground p-1 rounded shrink-0"
                           >
                             <Pencil className="w-3 h-3" />
@@ -986,6 +1006,27 @@ function ItineraryContent() {
                   onChange={(e) => setEditingDay({ ...editingDay, date: e.target.value })}
                   required
                 />
+                {editingDay.date !== editingDay.originalDate && sortedDays.filter(
+                  (d) => d.id !== editingDay.id && new Date(d.date).getTime() > new Date(editingDay.originalDate).getTime()
+                ).length > 0 && (
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={shiftSubsequentDays}
+                      onChange={(e) => setShiftSubsequentDays(e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    Verschuif ook opvolgende dagen
+                    <span className="text-xs">
+                      ({(() => {
+                        const diffMs = new Date(editingDay.date).getTime() - new Date(editingDay.originalDate).getTime();
+                        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+                        return diffDays > 0 ? `+${diffDays}` : diffDays;
+                      })()}{" "}
+                      {Math.abs(Math.round((new Date(editingDay.date).getTime() - new Date(editingDay.originalDate).getTime()) / (1000 * 60 * 60 * 24))) === 1 ? "dag" : "dagen"})
+                    </span>
+                  </label>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Titel</Label>
