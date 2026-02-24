@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, CalendarDays, Loader2, List, Columns3, GripVertical, ChevronDown, ChevronUp, Pencil, Trash2, Check, Wallet } from "lucide-react";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 import BudgetBar from "@/components/BudgetBar";
+import MapView from "@/components/MapView";
 import { Badge } from "@/components/ui/badge";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 
@@ -342,6 +343,20 @@ function ItineraryContent() {
     .slice()
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) ?? [];
 
+  const mapMarkers = sortedDays.flatMap((day) =>
+    day.activities
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .filter((a) => a.latitude && a.longitude)
+      .map((a) => ({
+        id: a.id,
+        lat: a.latitude!,
+        lng: a.longitude!,
+        title: a.name,
+        category: a.category,
+      }))
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -366,7 +381,7 @@ function ItineraryContent() {
   }
 
   return (
-    <div className="p-8 mx-auto space-y-6 max-w-[1400px]">
+    <div className="p-8 mx-auto space-y-6 max-w-[1600px]">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -494,243 +509,261 @@ function ItineraryContent() {
         </Card>
       )}
 
-      <DragDropContext onDragEnd={handleDragEnd}>
-        {viewMode === "list" ? (
-          <div className="space-y-6 max-w-4xl">
-            {sortedDays.map((day, index) => (
-              <Card key={day.id}>
-                <CardContent className="pt-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
-                        {index + 1}
+      <div className="flex gap-6">
+        {/* Left side: existing day list/kanban */}
+        <div className="flex-1 min-w-0 space-y-6">
+          <DragDropContext onDragEnd={handleDragEnd}>
+            {viewMode === "list" ? (
+              <div className="space-y-6 max-w-4xl">
+                {sortedDays.map((day, index) => (
+                  <Card key={day.id}>
+                    <CardContent className="pt-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <h2 className="text-lg font-semibold">{day.title}</h2>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(day.date).toLocaleDateString("nl-NL", {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => setShowAddActivity(day.id)}>
+                          <Plus className="w-4 h-4 mr-1" />
+                          Activiteit
+                        </Button>
                       </div>
-                      <div>
-                        <h2 className="text-lg font-semibold">{day.title}</h2>
-                        <p className="text-sm text-muted-foreground">
+
+                      {day.notes && (
+                        <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
+                          {day.notes}
+                        </p>
+                      )}
+
+                      <Droppable droppableId={day.id}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`space-y-2 min-h-[40px] rounded-lg transition-colors ${snapshot.isDraggingOver ? "bg-accent/50 p-2" : ""}`}
+                          >
+                            {day.activities
+                              .slice()
+                              .sort((a, b) => a.order - b.order)
+                              .map((activity, actIndex) => (
+                                <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
+                                  {(provided, snapshot) => (
+                                    <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      className={snapshot.isDragging ? "opacity-90" : ""}
+                                    >
+                                      <div className="flex items-start gap-1">
+                                        <div
+                                          {...provided.dragHandleProps}
+                                          className="mt-3 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing"
+                                        >
+                                          <GripVertical className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1">
+                                          <ActivityCard
+                                            activity={activity}
+                                            onDelete={() => deleteActivity(activity.id)}
+                                            onEdit={() => setEditingActivity({ ...activity, dayId: day.id })}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
+                            {provided.placeholder}
+                          </div>
+                        )}
+                      </Droppable>
+
+                      {showAddActivity === day.id && (
+                        <>
+                          <Separator />
+                          <form onSubmit={(e) => addActivity(e, day.id)} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <Input
+                                placeholder="Activiteit naam"
+                                value={newActivity.name}
+                                onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
+                                required
+                              />
+                              <PlacesAutocomplete
+                                value={newActivity.location}
+                                onChange={(value) => setNewActivity({ ...newActivity, location: value })}
+                                onPlaceSelect={(place) => setNewActivity({
+                                  ...newActivity,
+                                  location: place.name,
+                                  address: place.address,
+                                  latitude: place.latitude,
+                                  longitude: place.longitude,
+                                  placeId: place.placeId,
+                                })}
+                                placeholder="Zoek locatie..."
+                              />
+                            </div>
+                            <Input
+                              placeholder="Beschrijving"
+                              value={newActivity.description}
+                              onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
+                            />
+                            <div className="grid grid-cols-4 gap-3">
+                              <Input
+                                type="time"
+                                value={newActivity.startTime}
+                                onChange={(e) => setNewActivity({ ...newActivity, startTime: e.target.value })}
+                              />
+                              <Input
+                                type="time"
+                                value={newActivity.endTime}
+                                onChange={(e) => setNewActivity({ ...newActivity, endTime: e.target.value })}
+                              />
+                              <Select
+                                value={newActivity.category}
+                                onValueChange={(value) => setNewActivity({ ...newActivity, category: value })}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
+                                  <SelectItem value="food">Eten & Drinken</SelectItem>
+                                  <SelectItem value="transport">Transport</SelectItem>
+                                  <SelectItem value="shopping">Winkelen</SelectItem>
+                                  <SelectItem value="accommodation">Overnachting</SelectItem>
+                                  <SelectItem value="culture">Cultuur</SelectItem>
+                                  <SelectItem value="nature">Natuur</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input
+                                type="number"
+                                placeholder="Kosten"
+                                value={newActivity.cost || ""}
+                                onChange={(e) => setNewActivity({ ...newActivity, cost: Number(e.target.value) })}
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button type="submit" size="sm">Toevoegen</Button>
+                              <Button type="button" variant="outline" size="sm" onClick={() => setShowAddActivity(null)}>
+                                Annuleren
+                              </Button>
+                            </div>
+                          </form>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              /* Kanban view */
+              <div className="flex gap-4 overflow-x-auto pb-4">
+                {sortedDays.map((day, index) => (
+                  <div key={day.id} className="w-80 shrink-0">
+                    <div className="bg-muted/50 rounded-xl border">
+                      <div className="p-4 border-b">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs">
+                            {index + 1}
+                          </span>
+                          <h3 className="font-semibold text-sm truncate">{day.title}</h3>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
                           {new Date(day.date).toLocaleDateString("nl-NL", {
-                            weekday: "long",
+                            weekday: "short",
                             day: "numeric",
-                            month: "long",
+                            month: "short",
                           })}
                         </p>
                       </div>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => setShowAddActivity(day.id)}>
-                      <Plus className="w-4 h-4 mr-1" />
-                      Activiteit
-                    </Button>
-                  </div>
 
-                  {day.notes && (
-                    <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3">
-                      {day.notes}
-                    </p>
-                  )}
-
-                  <Droppable droppableId={day.id}>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`space-y-2 min-h-[40px] rounded-lg transition-colors ${snapshot.isDraggingOver ? "bg-accent/50 p-2" : ""}`}
-                      >
-                        {day.activities
-                          .slice()
-                          .sort((a, b) => a.order - b.order)
-                          .map((activity, actIndex) => (
-                            <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  className={snapshot.isDragging ? "opacity-90" : ""}
-                                >
-                                  <div className="flex items-start gap-1">
+                      <Droppable droppableId={day.id}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            className={`p-2 space-y-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-accent/30" : ""}`}
+                          >
+                            {day.activities
+                              .slice()
+                              .sort((a, b) => a.order - b.order)
+                              .map((activity, actIndex) => (
+                                <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
+                                  {(provided, snapshot) => (
                                     <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
                                       {...provided.dragHandleProps}
-                                      className="mt-3 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing"
+                                      className={snapshot.isDragging ? "opacity-90" : ""}
                                     >
-                                      <GripVertical className="w-4 h-4" />
-                                    </div>
-                                    <div className="flex-1">
                                       <ActivityCard
                                         activity={activity}
                                         onDelete={() => deleteActivity(activity.id)}
                                         onEdit={() => setEditingActivity({ ...activity, dayId: day.id })}
                                       />
                                     </div>
-                                  </div>
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
+                                  )}
+                                </Draggable>
+                              ))}
+                            {provided.placeholder}
+                          </div>
+                        )}
+                      </Droppable>
 
-                  {showAddActivity === day.id && (
-                    <>
-                      <Separator />
-                      <form onSubmit={(e) => addActivity(e, day.id)} className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            placeholder="Activiteit naam"
-                            value={newActivity.name}
-                            onChange={(e) => setNewActivity({ ...newActivity, name: e.target.value })}
-                            required
-                          />
-                          <PlacesAutocomplete
-                            value={newActivity.location}
-                            onChange={(value) => setNewActivity({ ...newActivity, location: value })}
-                            onPlaceSelect={(place) => setNewActivity({
-                              ...newActivity,
-                              location: place.name,
-                              address: place.address,
-                              latitude: place.latitude,
-                              longitude: place.longitude,
-                              placeId: place.placeId,
-                            })}
-                            placeholder="Zoek locatie..."
-                          />
-                        </div>
-                        <Input
-                          placeholder="Beschrijving"
-                          value={newActivity.description}
-                          onChange={(e) => setNewActivity({ ...newActivity, description: e.target.value })}
-                        />
-                        <div className="grid grid-cols-4 gap-3">
-                          <Input
-                            type="time"
-                            value={newActivity.startTime}
-                            onChange={(e) => setNewActivity({ ...newActivity, startTime: e.target.value })}
-                          />
-                          <Input
-                            type="time"
-                            value={newActivity.endTime}
-                            onChange={(e) => setNewActivity({ ...newActivity, endTime: e.target.value })}
-                          />
-                          <Select
-                            value={newActivity.category}
-                            onValueChange={(value) => setNewActivity({ ...newActivity, category: value })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="sightseeing">Bezienswaardigheden</SelectItem>
-                              <SelectItem value="food">Eten & Drinken</SelectItem>
-                              <SelectItem value="transport">Transport</SelectItem>
-                              <SelectItem value="shopping">Winkelen</SelectItem>
-                              <SelectItem value="accommodation">Overnachting</SelectItem>
-                              <SelectItem value="culture">Cultuur</SelectItem>
-                              <SelectItem value="nature">Natuur</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            type="number"
-                            placeholder="Kosten"
-                            value={newActivity.cost || ""}
-                            onChange={(e) => setNewActivity({ ...newActivity, cost: Number(e.target.value) })}
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button type="submit" size="sm">Toevoegen</Button>
-                          <Button type="button" variant="outline" size="sm" onClick={() => setShowAddActivity(null)}>
-                            Annuleren
-                          </Button>
-                        </div>
-                      </form>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          /* Kanban view */
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {sortedDays.map((day, index) => (
-              <div key={day.id} className="w-80 shrink-0">
-                <div className="bg-muted/50 rounded-xl border">
-                  <div className="p-4 border-b">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs">
-                        {index + 1}
-                      </span>
-                      <h3 className="font-semibold text-sm truncate">{day.title}</h3>
+                      <div className="p-2 border-t">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-xs"
+                          onClick={() => setShowAddActivity(day.id)}
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Activiteit
+                        </Button>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(day.date).toLocaleDateString("nl-NL", {
-                        weekday: "short",
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </p>
                   </div>
-
-                  <Droppable droppableId={day.id}>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className={`p-2 space-y-2 min-h-[100px] transition-colors ${snapshot.isDraggingOver ? "bg-accent/30" : ""}`}
-                      >
-                        {day.activities
-                          .slice()
-                          .sort((a, b) => a.order - b.order)
-                          .map((activity, actIndex) => (
-                            <Draggable key={activity.id} draggableId={activity.id} index={actIndex}>
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  className={snapshot.isDragging ? "opacity-90" : ""}
-                                >
-                                  <ActivityCard
-                                    activity={activity}
-                                    onDelete={() => deleteActivity(activity.id)}
-                                    onEdit={() => setEditingActivity({ ...activity, dayId: day.id })}
-                                  />
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-
-                  <div className="p-2 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-xs"
-                      onClick={() => setShowAddActivity(day.id)}
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      Activiteit
-                    </Button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
+          </DragDropContext>
+
+          {sortedDays.length === 0 && (
+            <Card className="text-center py-12">
+              <CardContent>
+                <CalendarDays className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">
+                  Nog geen dagen gepland. Voeg je eerste dag toe!
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Right side: Map */}
+        {trip && mapMarkers.length > 0 && (
+          <div className="w-[400px] shrink-0">
+            <div className="h-[calc(100vh-12rem)] rounded-xl overflow-hidden border sticky top-8">
+              <MapView
+                markers={mapMarkers}
+                showRoute={true}
+                zoom={6}
+              />
+            </div>
           </div>
         )}
-      </DragDropContext>
-
-      {sortedDays.length === 0 && (
-        <Card className="text-center py-12">
-          <CardContent>
-            <CalendarDays className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">
-              Nog geen dagen gepland. Voeg je eerste dag toe!
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      </div>
 
       {/* Add Activity Dialog (for kanban view) */}
       {showAddActivity && viewMode === "kanban" && (

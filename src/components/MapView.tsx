@@ -17,6 +17,7 @@ interface MapViewProps {
   center?: { lat: number; lng: number };
   zoom?: number;
   onMarkerClick?: (marker: Marker) => void;
+  showRoute?: boolean;
 }
 
 const categoryColors: Record<string, string> = {
@@ -38,11 +39,13 @@ export default function MapView({
   center = { lat: 52.3676, lng: 4.9041 },
   zoom = 4,
   onMarkerClick,
+  showRoute = false,
 }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
   const [error, setError] = useState<string | null>(
     !apiKey
       ? "Google Maps API key niet geconfigureerd. Voeg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY toe aan je .env bestand."
@@ -130,6 +133,24 @@ export default function MapView({
       markersRef.current.push(advancedMarker);
     });
 
+    // Draw route polyline
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    if (showRoute && markers.length > 1) {
+      const path = markers.map((m) => ({ lat: m.lat, lng: m.lng }));
+      polylineRef.current = new google.maps.Polyline({
+        path,
+        geodesic: true,
+        strokeColor: "#18181b",
+        strokeOpacity: 0.6,
+        strokeWeight: 2,
+        map,
+      });
+    }
+
     if (markers.length > 1) {
       const bounds = new google.maps.LatLngBounds();
       markers.forEach((m) => bounds.extend({ lat: m.lat, lng: m.lng }));
@@ -138,7 +159,7 @@ export default function MapView({
       map.setCenter({ lat: markers[0].lat, lng: markers[0].lng });
       map.setZoom(15);
     }
-  }, [markers, onMarkerClick]);
+  }, [markers, onMarkerClick, showRoute]);
 
   useEffect(() => {
     if (mapInstanceRef.current && center) {
